@@ -83,12 +83,12 @@
 </head>
 
 <body>
-  <h2>MQTT Web App</h2>
+  <h2>VitalX Web App</h2>
 
   <div id="deviceLabel">Device: <span id="deviceName">Unknown</span> <span id="statusIndicator"></span></div>
 
   <button id="startBtn" onclick="startCommand()">Start</button>
-  <button id="stopBtn" onclick="stopCommand()">Stop & Download</button>
+  <button id="stopBtn" onclick="stopCommand()">Stop & Download Data</button>
 
   <h3>User Info</h3>
   <div id="userForm">
@@ -120,6 +120,11 @@
 
     <button onclick="submitUserInfo()">Submit</button>
   </div>
+
+  <h3>Pain level: 
+   <span id="painValue">Waiting...</span>
+  </div>
+  </h3>
 
   <label><input type="checkbox" id="logToggle" /> Enable Logging</label>
 
@@ -153,6 +158,7 @@
       client.on('connect', () => {
         log("Connected to broker.");
         client.subscribe(`device/${selectedDevice}/status_online`);
+        client.subscribe(`device/${selectedDevice}/pain_level`);
       });
 
       client.on('message', (topic, message) => {
@@ -178,6 +184,10 @@
 
         if (topic === `device/${selectedDevice}/status_online`) {
           updateStatusIndicator(message.toString() === "true");
+        }
+
+        if (topic === `device/${selectedDevice}/pain_level`) {
+          document.getElementById("painValue").textContent = message.toString();
         }
       });
 
