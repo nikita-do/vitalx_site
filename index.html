@@ -87,9 +87,11 @@
 
   <div id="deviceLabel">Device: <span id="deviceName">Unknown</span> <span id="statusIndicator"></span></div>
 
+  </div style="margin-top: 5px;">
   <button id="startBtn" onclick="startCommand()">Start</button>
   <button id="stopBtn" onclick="stopCommand()">Stop & Download Data</button>
-
+  </div>
+  
   <h3>User Info</h3>
   <div id="userForm">
     <input type="text" id="userId" placeholder="ID" />
@@ -116,15 +118,18 @@
         <option value="TW" selected>TW</option>
         <option value="VN">VN</option>
       </select>
+      <button onclick="submitUserInfo()">Submit</button>
     </div>
-
-    <button onclick="submitUserInfo()">Submit</button>
   </div>
 
-  <h3>Pain level: 
-   <span id="painValue">Waiting...</span>
-  </div>
+  <h3>Pain level:
+    <span id="painValue">Waiting...</span>
   </h3>
+
+  <h3>Pulse rate:
+    <span id="pulseValue">Waiting...</span>
+  </h3>
+
 
   <label><input type="checkbox" id="logToggle" /> Enable Logging</label>
 
@@ -159,6 +164,7 @@
         log("Connected to broker.");
         client.subscribe(`device/${selectedDevice}/status_online`);
         client.subscribe(`device/${selectedDevice}/pain_level`);
+        client.subscribe(`device/${selectedDevice}/pulse_rate`);
       });
 
       client.on('message', (topic, message) => {
@@ -189,6 +195,13 @@
         if (topic === `device/${selectedDevice}/pain_level`) {
           document.getElementById("painValue").textContent = message.toString();
         }
+
+        if (topic === `device/${selectedDevice}/pulse_rate`) {
+          const pulseStr = message.toString();
+          const pulseInt = parseInt(pulseStr);
+          document.getElementById("pulseValue").textContent = isNaN(pulseInt) ? "Waiting..." : pulseInt;
+        }
+
       });
 
       client.on('error', (err) => {
