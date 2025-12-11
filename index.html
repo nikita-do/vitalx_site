@@ -1,319 +1,232 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MQTT Web App - Drive Download</title>
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-  <style>
-    body {
-      font-family: sans-serif;
-      margin: 20px;
-    }
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VitalX MQTT - Auto Connect</title>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    button {
-      margin-right: 10px;
-      padding: 10px 20px;
-      font-size: 16px;
-    }
+    <style>
+        body { font-family: sans-serif; margin: 20px;}
+        #statusIndicator { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-left: 10px; background-color: grey; vertical-align: middle;}
+        #chartContainer {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-top: 15px;
+          width: 100%;
+        }
 
-    #startBtn {
-      background-color: #4CAF50;
-      color: white;
-    }
+        canvas {
+          background: #fafafa;
+          border: 1px solid #ddd;
+          padding: 4px;
+          border-radius: 4px;
+          width: 100% !important;
+          height: 260px !important;
+        }
+        h3{ margin-bottom: 4px; margin-top: 8px;}
 
-    #stopBtn {
-      background-color: #f44336;
-      color: white;
-    }
+        #timer { margin-top: 15px; font-size: 20px; font-weight: bold; }
+        #log {
+          margin-top: 20px;
+          padding: 10px;
+          background: #f0f0f0;
+          height: auto;
+          max-height: 4.8em;   /* 3 lines × line-height 1.6 */
+          overflow-y: hidden;  /* hide overflow */
+          line-height: 1.6em;
+          font-family: monospace;
+          white-space: normal;
+        }
 
-    #log {
-      margin-top: 20px;
-      padding: 10px;
-      background: #f0f0f0;
-      height: 300px;
-      overflow-y: scroll;
-      font-family: monospace;
-    }
-
-    #userForm input,
-    #userForm select {
-      margin: 5px;
-      padding: 5px;
-    }
-
-    .error-text {
-      font-size: 12px;
-      color: red;
-      margin-left: 5px;
-      margin-bottom: 5px;
-    }
-
-    label {
-      display: block;
-      margin-top: 5px;
-    }
-
-    .inline-label {
-      display: inline-block;
-      margin-right: 10px;
-    }
-
-    #logToggle {
-      margin-left: 10px;
-      font-size: 14px;
-    }
-
-    #deviceLabel {
-      margin: 10px 0;
-      font-size: 18px;
-    }
-
-    #statusIndicator {
-      display: inline-block;
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      margin-left: 10px;
-      vertical-align: middle;
-      background-color: gray;
-    }
-  </style>
+    </style>    
 </head>
 
 <body>
-  <h2>VitalX Web App</h2>
 
-  <div id="deviceLabel">Device: <span id="deviceName">Unknown</span> <span id="statusIndicator"></span></div>
+  <h2>VitalX MQTT Realtime Monitoring</h2>
 
-  </div style="margin-top: 5px;">
-  <button id="startBtn" onclick="startCommand()">Start</button>
-  <button id="stopBtn" onclick="stopCommand()">Stop & Download Data</button>
-  </div>
-  
-  <h3>User Info</h3>
-  <div id="userForm">
-    <input type="text" id="userId" placeholder="ID" />
-    <div class="error-text" id="errorId"></div>
+  <div>Device: <span id="deviceName">Unknown</span> <span id="statusIndicator"></span></div>
+  <div id="timer">Time: 0:00:00</div>
 
-    <select id="userGender">
-      <option value="female">Female</option>
-      <option value="male">Male</option>
-    </select>
-    <br />
-
-    <input type="text" id="userAge" placeholder="Age" />
-    <div class="error-text" id="errorAge"></div>
-
-    <input type="text" id="userWeight" placeholder="Weight (kg)" />
-    <div class="error-text" id="errorWeight"></div>
-
-    <input type="text" id="userHeight" placeholder="Height (cm)" />
-    <div class="error-text" id="errorHeight"></div>
-
-    <div style="margin-top: 5px;">
-      <label for="userLocation" class="inline-label">Location</label>
-      <select id="userLocation">
-        <option value="TW" selected>TW</option>
-        <option value="VN">VN</option>
-      </select>
-      <button onclick="submitUserInfo()">Submit</button>
-    </div>
-  </div>
-
-  <h3>Pulse rate:
-    <span id="pulseValue">Waiting...</span>
-  </h3>
-
-
-  <label><input type="checkbox" id="logToggle" /> Enable Logging</label>
-
+  <label><input type="checkbox" id="logToggle" checked> Enable Logging</label>
   <div id="log"></div>
 
-  <script>
-    const MQTT_BROKER_URL = "wss://700be638167b43289186dff783367cc3.s1.eu.hivemq.cloud:8884/mqtt";
-    const MQTT_USERNAME = "ngocdo";
-    const MQTT_PASSWORD = "Ng19102002";
+  <!-- 3 Charts -->
+  <div id="chartContainer">
+    <div>
+      <h3>ECG</h3>
+      <canvas id="ecgChart" height="200"></canvas>
+    </div>
 
-    let client;
-    let selectedDevice = "";
-    let waitingForDriveLink = false;
+    <div>
+      <h3>GSR</h3>
+      <canvas id="gsrChart" height="200"></canvas>
+    </div>
 
-    function getDeviceIdFromUrl() {
-      const params = new URLSearchParams(window.location.search);
-      return params.get("device");
-    }
+    <div>
+      <h3>PPG</h3>
+      <canvas id="ppgChart" height="200"></canvas>
+    </div>
+  </div>
+        
+<script>
+  //Information broker MQTT suport Websockets
+  const MQTT_BROKER_URL = "wss://700be638167b43289186dff783367cc3.s1.eu.hivemq.cloud:8884/mqtt";
+  const MQTT_USERNAME = "ngocdo";
+  const MQTT_PASSWORD = "Ng19102002";
 
-    function updateStatusIndicator(isOnline) {
-      const indicator = document.getElementById("statusIndicator");
-      indicator.style.backgroundColor = isOnline ? "green" : "red";
-    }
+  let client;
+  let deviceID = "";
 
-    function connectClient() {
-      client = mqtt.connect(MQTT_BROKER_URL, {
-        username: MQTT_USERNAME,
-        password: MQTT_PASSWORD
-      });
+  //==========================
+  //TIMER SYSTEM
+  //==========================
+  let timerInterval = null;
+  let totalSeconds = 0;
 
-      client.on('connect', () => {
-        log("Connected to broker.");
-        client.subscribe(`device/${selectedDevice}/status_online`);
-        client.subscribe(`device/${selectedDevice}/pain_level`);
-        client.subscribe(`device/${selectedDevice}/pulse_rate`);
-      });
+  function startTimer() {
+    if (timerInterval) return; // Already running
+    timerInterval = setInterval(() => {
+      totalSeconds++;
+      document.getElementById("timer").textContent = "Time: " + formatTime(totalSeconds);
+    }, 1000);
+  }
 
-      client.on('message', (topic, message) => {
-        log(`Message on ${topic}: ${message.toString()}`);
+  function stopTimer() {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
 
-        if (topic === `device/${selectedDevice}/data/file` && waitingForDriveLink) {
-          waitingForDriveLink = false;
-          const driveUrl = message.toString();
-          log(`Received Drive link: ${driveUrl}`);
+  function resetTimer() {
+    totalSeconds = 0;
+    document.getElementById("timer").textContent = "Time: 0:00:00";
+  }
 
-          const fileId = extractDriveFileId(driveUrl);
-          if (fileId) {
-            const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-            log(`Download URL: ${downloadUrl}`);
-            triggerDownload(downloadUrl);
-          } else {
-            log("Could not extract file ID from Google Drive link.");
-          }
+  function formatTime(sec) {
+    let h = String(Math.floor(sec / 3600)).padStart(2, '0');
+    let m = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+    let s = String(sec % 60).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  }
 
-          client.unsubscribe(`device/${selectedDevice}/data/file`);
-          log(`Unsubscribed from device/${selectedDevice}/data/file`);
-        }
+  //==========================
+  //LOGGING
+  //==========================
+  function log(msg) {
+    if (!document.getElementById("logToggle").checked) return;
+    const logDiv = document.getElementById("log");
+    logDiv.innerHTML += msg + "<br>";
+    logDiv.scrollTop = logDiv.scrollHeight;
+    console.log(msg);
+  }
 
-        if (topic === `device/${selectedDevice}/status_online`) {
-          updateStatusIndicator(message.toString() === "true");
-        }
+  //==========================
+  //GET DEVICE ID FROM URL  
+  //==========================
+  function getDeviceIdFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("device");
+  }
 
-        if (topic === `device/${selectedDevice}/pain_level`) {
-          document.getElementById("painValue").textContent = message.toString();
-        }
+  //==========================
+  //UPDATE STATUS INDICATOR
+  //==========================
+  function updateStatusIndicator(isOnline) {
+    document.getElementById("statusIndicator").style.backgroundColor = isOnline ? "green" : "red";
+  }
 
-        if (topic === `device/${selectedDevice}/pulse_rate`) {
-          const pulseStr = message.toString();
-          const pulseInt = parseInt(pulseStr);
-          document.getElementById("pulseValue").textContent = isNaN(pulseInt) ? "Waiting..." : pulseInt;
-        }
-
-      });
-
-      client.on('error', (err) => {
-        log("Error: " + err.message);
-      });
-    }
-
-    function startCommand() {
-      log("Publishing START command...");
-      client.publish(`device/${selectedDevice}/commands/start`, "true");
-    }
-
-    function stopCommand() {
-      log("Publishing STOP command...");
-      client.publish(`device/${selectedDevice}/commands/start`, "false");
-
-      client.subscribe(`device/${selectedDevice}/data/file`, (err) => {
-        if (!err) {
-          log(`Subscribed to device/${selectedDevice}/data/file. Waiting for Drive link...`);
-          waitingForDriveLink = true;
-        } else {
-          log("Subscribe error: " + err.message);
-        }
-      });
-    }
-
-    function submitUserInfo() {
-      const id = document.getElementById("userId").value.trim();
-      const gender = document.getElementById("userGender").value;
-      const location = document.getElementById("userLocation").value;
-      const ageStr = document.getElementById("userAge").value.trim();
-      const weightStr = document.getElementById("userWeight").value.trim();
-      const heightStr = document.getElementById("userHeight").value.trim();
-
-      const age = parseInt(ageStr);
-      const weight = parseInt(weightStr);
-      const height = parseInt(heightStr);
-
-      clearAllErrors();
-
-      let hasError = false;
-      if (!id) {
-        showError("errorId", "ID is required.");
-        hasError = true;
+  //==========================
+  //CREATE 3 REALTIME CHARTS
+  //==========================
+  function createChart(canvasId, label) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: Array(100).fill(''),
+      datasets: [{
+        label: label,
+        data: Array(100).fill(0),
+        borderColor: 'blue',
+        borderWidth: 1,
+        fill: false,
+        tension: 0
+      }]
+    },
+    options: { 
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      scales: { 
+        y: { beginAtZero: true }
       }
-      if (isNaN(age)) {
-        showError("errorAge", "Age must be an integer.");
-        hasError = true;
+    }
+  });
+}
+
+  //==========================
+  //MQTT CONNECTION
+  //==========================
+  function connectMQTT() {
+    client = mqtt.connect(MQTT_BROKER_URL, {
+      username: MQTT_USERNAME,
+      password: MQTT_PASSWORD
+    });
+
+    client.on('connect', () => {
+      log("MQTT connected.");
+
+      //Realtime sensor signals
+      client.subscribe(`device/${deviceID}/ecg`);
+      client.subscribe(`device/${deviceID}/gsr`);
+      client.subscribe(`device/${deviceID}/ppg`);
+
+      //Online/offline
+      client.subscribe(`device/${deviceID}/status_online`);
+
+      // Start/stop receive from app
+      client.subscribe(`device/${deviceID}/commands/start`);
+      client.subscribe(`device/${deviceID}/commands/stop`);
+    });
+
+    client.on('message', (topic, message) => {
+      const data = message.toString();
+      log(`Received [${topic}]: ${data}`);
+
+      if(topic === `device/${deviceID}/status_online`) 
+        updateStatusIndicator(data === "true");
+
+      if (topic === `device/${deviceID}/ecg`) pushData(ecgChart, Number(data));
+      if (topic === `device/${deviceID}/gsr`) pushData(gsrChart, Number(data));
+      if (topic === `device/${deviceID}/ppg`) pushData(ppgChart, Number(data));
+
+      //Start from app
+      if (topic === `device/${deviceID}/commands/start` && data === "true") {
+        resetTimer();
+        startTimer();
       }
-      if (isNaN(weight)) {
-        showError("errorWeight", "Weight must be an integer.");
-        hasError = true;
+
+      //Stop from app
+      if (topic === `device/${deviceID}/commands/stop` && data === "false") {
+        stopTimer();
       }
-      if (isNaN(height)) {
-        showError("errorHeight", "Height must be an integer.");
-        hasError = true;
+    });
+  }
+  //==========================
+  //INIT
+  //==========================
+  window.onload = () => {
+      deviceID = getDeviceIdFromUrl();
+      if(!deviceID) {
+          alert("No device ID provided in URL.");
+          return;
       }
-
-      if (hasError) return;
-
-      client.publish(`device/${selectedDevice}/user/id`, id, { retain: true });
-      client.publish(`device/${selectedDevice}/user/gender`, gender, { retain: true });
-      client.publish(`device/${selectedDevice}/user/location`, location, { retain: true });
-      client.publish(`device/${selectedDevice}/user/age`, age.toString(), { retain: true });
-      client.publish(`device/${selectedDevice}/user/weight`, weight.toString(), { retain: true });
-      client.publish(`device/${selectedDevice}/user/height`, height.toString(), { retain: true });
-
-      log("User info submitted.");
-    }
-
-    function clearAllErrors() {
-      ["errorId", "errorAge", "errorWeight", "errorHeight"].forEach(clearError);
-    }
-
-    function showError(id, msg) {
-      document.getElementById(id).textContent = msg;
-    }
-
-    function clearError(id) {
-      document.getElementById(id).textContent = "";
-    }
-
-    function extractDriveFileId(url) {
-      const regex = /\/d\/([^\/]+)\//;
-      const match = url.match(regex);
-      return match ? match[1] : null;
-    }
-
-    function triggerDownload(downloadUrl) {
-      const link = document.createElement("a");
-      link.href = downloadUrl;
-      link.download = "";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      log("Download triggered.");
-    }
-
-    function log(msg) {
-      if (!document.getElementById("logToggle").checked) return;
-      const logDiv = document.getElementById("log");
-      logDiv.innerHTML += msg + "<br>";
-      logDiv.scrollTop = logDiv.scrollHeight;
-    }
-
-    // Init
-    window.onload = () => {
-      selectedDevice = getDeviceIdFromUrl();
-      if (!selectedDevice) {
-        alert("No device ID provided in URL.");
-        return;
-      }
-      document.getElementById("deviceName").textContent = selectedDevice;
-      connectClient();
-    };
-  </script>
+      document.getElementById("deviceName").textContent = deviceID;
+      connectMQTT();
+  };
+</script>
 </body>
-
 </html>
